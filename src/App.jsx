@@ -5,7 +5,7 @@ import EngineerDashboard from './components/EngineerDashboard';
 import SmeDashboard from './components/SmeDashboard';
 import ChatWorkspace from './components/ChatWorkspace';
 import { Terminal, LogOut, Trash2, Cpu, Shield } from 'lucide-react';
-import { auth } from './utils/firebase';
+import { auth, isSmeEmail } from './utils/firebase';
 import { signOut } from 'firebase/auth';
 
 export default function App() {
@@ -32,11 +32,13 @@ export default function App() {
         if (saved) {
           setUser(JSON.parse(saved));
         } else {
+          const email = firebaseUser.email;
+          const role = isSmeEmail(email) ? 'sme' : 'engineer';
           setUser({
-            name: firebaseUser.displayName || 'Google User',
-            email: firebaseUser.email,
-            role: null, // Prompt for role
-            avatarColor: '#9333ea',
+            name: firebaseUser.displayName || (role === 'sme' ? 'Google SME' : 'Google Engineer'),
+            email: email,
+            role: role,
+            avatarColor: role === 'sme' ? '#06b6d4' : '#a855f7',
             uid: firebaseUser.uid
           });
         }
@@ -175,73 +177,6 @@ export default function App() {
       <main>
         {!user ? (
           <RoleSelect onSelect={setUser} />
-        ) : !user.role ? (
-          // Role Selection Overlay for Google Authenticated Users
-          <div className="fade-in" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '70vh',
-          }}>
-            <div className="glass-panel" style={{
-              padding: '3rem 2.5rem',
-              maxWidth: '500px',
-              width: '100%',
-              textAlign: 'center',
-              border: '1px solid var(--glass-border)'
-            }}>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: '#fff' }}>
-                Select App Access Role
-              </h2>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '2.5rem', fontSize: '0.9rem' }}>
-                Welcome {user.name}! To proceed, please select your escalations role.
-              </p>
-              
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <button
-                  onClick={() => handleRoleSelection('engineer')}
-                  className="glass-panel glass-panel-hover"
-                  style={{
-                    flex: 1,
-                    padding: '24px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    color: '#fff',
-                    border: '1px solid var(--glass-border)',
-                    background: 'rgba(147, 51, 234, 0.05)'
-                  }}
-                >
-                  <Cpu size={32} style={{ color: '#a855f7' }} />
-                  <div style={{ fontWeight: 700 }}>ENGINEER</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>File & monitor site issues</div>
-                </button>
-                
-                <button
-                  onClick={() => handleRoleSelection('sme')}
-                  className="glass-panel glass-panel-hover"
-                  style={{
-                    flex: 1,
-                    padding: '24px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    color: '#fff',
-                    border: '1px solid var(--glass-border)',
-                    background: 'rgba(6, 182, 212, 0.05)'
-                  }}
-                >
-                  <Shield size={32} style={{ color: '#06b6d4' }} />
-                  <div style={{ fontWeight: 700 }}>SME EXPERT</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Resolve escalations & analyze</div>
-                </button>
-              </div>
-            </div>
-          </div>
         ) : activeWorkspaceCase ? (
           <ChatWorkspace
             user={user}

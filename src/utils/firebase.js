@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import smeConfig from './sme_config.json';
 
 // Default configurations with your live project credentials
 const firebaseConfig = {
@@ -18,5 +19,14 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
+
+// Export emails array for reference or display in other parts of code if needed
+export const SME_EMAILS = smeConfig.sme_emails;
+
+// Helper to determine if an email belongs to an SME
+export const isSmeEmail = (email) => {
+  if (!email) return false;
+  return SME_EMAILS.map(e => e.toLowerCase().trim()).includes(email.toLowerCase().trim());
+};
 
 export default app;

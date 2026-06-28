@@ -1,6 +1,29 @@
-import React, { useState } from 'react';
-import { Terminal, Send, History, Calendar, CheckCircle2, AlertCircle, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Terminal, Send, History, Calendar, CheckCircle2, AlertCircle, Download, Clock } from 'lucide-react';
 import { generateSessionPDF } from '../utils/pdfGenerator';
+
+const WaitingTimer = ({ createdAt }) => {
+  const [elapsed, setElapsed] = useState('');
+
+  useEffect(() => {
+    const calculateElapsed = () => {
+      const diffMs = new Date() - new Date(createdAt);
+      const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+      const mins = Math.floor(diffSecs / 60);
+      const secs = diffSecs % 60;
+      return `${mins}m ${secs}s`;
+    };
+
+    setElapsed(calculateElapsed());
+    const interval = setInterval(() => {
+      setElapsed(calculateElapsed());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [createdAt]);
+
+  return <span>{elapsed}</span>;
+};
 
 export default function EngineerDashboard({ engineerName, cases, messages = [], onCreateCase }) {
   // Find currently open cases for this engineer
@@ -117,6 +140,23 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>
               Waiting for SME Assignment
             </h2>
+            <div style={{
+              fontSize: '1.8rem',
+              fontWeight: 800,
+              color: 'var(--color-secondary)',
+              margin: '1.25rem 0',
+              fontFamily: 'var(--font-display)',
+              background: 'rgba(6, 182, 212, 0.1)',
+              padding: '10px 20px',
+              borderRadius: '8px',
+              border: '1px solid rgba(6, 182, 212, 0.2)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <Clock size={20} className="pulse" />
+              <span>Wait Time: <WaitingTimer createdAt={myOpenCase.createdAt} /></span>
+            </div>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.85rem' }}>
               Your structured incident was broadcasted. A SME will connect to review configuration radio settings.
             </p>
@@ -382,6 +422,7 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
                   color: 'var(--text-muted)'
                 }}>
                   <span>SME: <strong>{c.smeName || 'Unassigned'}</strong></span>
+                  {c.waitDuration && <span>Wait Time: <strong style={{ color: 'var(--color-secondary)' }}>{c.waitDuration}</strong></span>}
                   <span>Onsite: <strong>{c.presentOnsite}</strong></span>
                 </div>
               </div>

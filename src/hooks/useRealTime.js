@@ -135,11 +135,22 @@ export function useRealTime() {
   };
 
   const acceptCase = async (caseId, smeName) => {
+    const currentCase = cases.find(c => c.id === caseId);
+    const createdAt = currentCase ? currentCase.createdAt : new Date().toISOString();
+    const acceptedAt = new Date().toISOString();
+    
+    // Calculate wait time
+    const waitMs = new Date(acceptedAt) - new Date(createdAt);
+    const waitSecs = Math.max(0, Math.floor(waitMs / 1000));
+    const mins = Math.floor(waitSecs / 60);
+    const secs = waitSecs % 60;
+    const waitDuration = `${mins}m ${secs}s`;
+
     const systemMsg = {
       caseId,
       senderName: 'System',
       senderRole: 'system',
-      text: `SME ${smeName} accepted the case and joined the workspace.`,
+      text: `SME ${smeName} accepted the case and joined the workspace. (Wait time: ${waitDuration})`,
       media: null,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       timestampOrder: Date.now()
@@ -151,7 +162,8 @@ export function useRealTime() {
         await updateDoc(caseRef, {
           status: 'active',
           smeName,
-          acceptedAt: new Date().toISOString()
+          acceptedAt,
+          waitDuration
         });
         await addDoc(collection(db, 'messages'), systemMsg);
       } catch (e) {
@@ -164,7 +176,8 @@ export function useRealTime() {
             ...c,
             status: 'active',
             smeName,
-            acceptedAt: new Date().toISOString()
+            acceptedAt,
+            waitDuration
           };
         }
         return c;

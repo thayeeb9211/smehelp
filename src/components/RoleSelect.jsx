@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Cpu, Shield, ArrowRight } from 'lucide-react';
-import { auth, googleProvider } from '../utils/firebase';
+import { auth, googleProvider, isSmeEmail } from '../utils/firebase';
 import { signInWithPopup } from 'firebase/auth';
 
 export default function RoleSelect({ onSelect }) {
   const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(null); // 'engineer' | 'sme'
   const [customEmail, setCustomEmail] = useState('');
   const [customName, setCustomName] = useState('');
   const [error, setError] = useState('');
@@ -33,14 +32,14 @@ export default function RoleSelect({ onSelect }) {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const gUser = result.user;
+      const email = gUser.email;
+      const role = isSmeEmail(email) ? 'sme' : 'engineer';
       
-      // Pass the authenticated Google user details.
-      // Since Google Auth has no built-in "Role", Role will be selected dynamically
       onSelect({
-        name: gUser.displayName || 'Google Engineer',
-        email: gUser.email,
-        role: null, // Let App.jsx prompt for role Selection
-        avatarColor: '#9333ea',
+        name: gUser.displayName || (role === 'sme' ? 'Google SME' : 'Google Engineer'),
+        email: email,
+        role: role,
+        avatarColor: role === 'sme' ? '#06b6d4' : '#a855f7',
         uid: gUser.uid
       });
     } catch (err) {
@@ -51,11 +50,12 @@ export default function RoleSelect({ onSelect }) {
   };
 
   const handleAccountSelect = (account) => {
+    const role = isSmeEmail(account.email) ? 'sme' : 'engineer';
     onSelect({
       name: account.name,
       email: account.email,
-      role: account.role,
-      avatarColor: account.avatarColor
+      role: role,
+      avatarColor: role === 'sme' ? '#06b6d4' : '#a855f7'
     });
   };
 
@@ -65,20 +65,19 @@ export default function RoleSelect({ onSelect }) {
       setError('Please fill in both Name and Email.');
       return;
     }
-    if (!selectedRole) {
-      setError('Please select a role.');
-      return;
-    }
     if (!customEmail.includes('@')) {
       setError('Please enter a valid Google account email.');
       return;
     }
     
+    const email = customEmail.trim();
+    const role = isSmeEmail(email) ? 'sme' : 'engineer';
+
     onSelect({
       name: customName.trim(),
-      email: customEmail.trim(),
-      role: selectedRole,
-      avatarColor: selectedRole === 'sme' ? '#06b6d4' : '#a855f7'
+      email: email,
+      role: role,
+      avatarColor: role === 'sme' ? '#06b6d4' : '#a855f7'
     });
   };
 
@@ -258,45 +257,7 @@ export default function RoleSelect({ onSelect }) {
                 />
               </div>
 
-              {/* Role selection for custom login */}
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('engineer')}
-                  className="glass-panel"
-                  style={{
-                    flex: 1,
-                    padding: '8px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    color: selectedRole === 'engineer' ? '#a855f7' : 'var(--text-secondary)',
-                    border: selectedRole === 'engineer' ? '1px solid var(--color-primary)' : '1px solid var(--glass-border)',
-                    background: selectedRole === 'engineer' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
-                  }}
-                >
-                  <Cpu size={12} style={{ marginRight: '4px' }} /> Engineer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRole('sme')}
-                  className="glass-panel"
-                  style={{
-                    flex: 1,
-                    padding: '8px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    color: selectedRole === 'sme' ? '#06b6d4' : 'var(--text-secondary)',
-                    border: selectedRole === 'sme' ? '1px solid var(--color-secondary)' : '1px solid var(--glass-border)',
-                    background: selectedRole === 'sme' ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
-                  }}
-                >
-                  <Shield size={12} style={{ marginRight: '4px' }} /> SME
-                </button>
-              </div>
+
 
               <button type="submit" className="glass-btn" style={{ padding: '10px', fontSize: '0.85rem', width: '100%' }}>
                 Access with custom account <ArrowRight size={14} />

@@ -1,6 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Activity, CheckCircle, ArrowRight, User, Folder, Clock, BarChart3, Database, Users, HelpCircle, Download } from 'lucide-react';
 import { generateSessionPDF } from '../utils/pdfGenerator';
+
+const WaitingTimer = ({ createdAt }) => {
+  const [elapsed, setElapsed] = useState('');
+
+  useEffect(() => {
+    const calculateElapsed = () => {
+      const diffMs = new Date() - new Date(createdAt);
+      const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+      const mins = Math.floor(diffSecs / 60);
+      const secs = diffSecs % 60;
+      return `${mins}m ${secs}s`;
+    };
+
+    setElapsed(calculateElapsed());
+    const interval = setInterval(() => {
+      setElapsed(calculateElapsed());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [createdAt]);
+
+  return <span>{elapsed}</span>;
+};
 
 export default function SmeDashboard({ smeName, cases, messages = [], onAcceptCase, onEnterWorkspace }) {
   const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'analytics'
@@ -9,6 +32,25 @@ export default function SmeDashboard({ smeName, cases, messages = [], onAcceptCa
   const pendingCases = cases.filter(c => c.status === 'pending');
   const activeCases = cases.filter(c => c.status === 'active' && c.smeName === smeName);
   const resolvedCases = cases.filter(c => c.status === 'resolved');
+
+  // Calculate average wait time
+  const acceptedCases = cases.filter(c => c.waitDuration);
+  let averageWaitTimeStr = 'N/A';
+  if (acceptedCases.length > 0) {
+    let totalWaitSeconds = 0;
+    acceptedCases.forEach(c => {
+      const match = c.waitDuration.match(/(\d+)m\s+(\d+)s/);
+      if (match) {
+        const mins = parseInt(match[1], 10);
+        const secs = parseInt(match[2], 10);
+        totalWaitSeconds += (mins * 60) + secs;
+      }
+    });
+    const avgSecs = Math.round(totalWaitSeconds / acceptedCases.length);
+    const avgMins = Math.floor(avgSecs / 60);
+    const avgRemainingSecs = avgSecs % 60;
+    averageWaitTimeStr = `${avgMins}m ${avgRemainingSecs}s`;
+  }
 
   // Format date helper
   const formatDate = (isoString) => {
@@ -112,7 +154,7 @@ export default function SmeDashboard({ smeName, cases, messages = [], onAcceptCa
       </div>
 
       {/* Grid of stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
         <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
           <div style={{
             padding: '10px',
@@ -172,6 +214,26 @@ export default function SmeDashboard({ smeName, cases, messages = [], onAcceptCa
             </div>
           </div>
         </div>
+
+        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+          <div style={{
+            padding: '10px',
+            borderRadius: '10px',
+            background: 'rgba(168, 85, 247, 0.1)',
+            border: '1px solid rgba(168, 85, 247, 0.2)',
+            color: '#a855f7',
+          }}>
+            <Clock size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>
+              Avg Wait Time
+            </div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: '#fff' }}>
+              {averageWaitTimeStr}
+            </div>
+          </div>
+        </div>
       </div>
 
       {activeTab === 'queue' ? (
@@ -224,10 +286,10 @@ export default function SmeDashboard({ smeName, cases, messages = [], onAcceptCa
                       <User size={12} /> Filer: {c.engineerName}
                     </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={12} /> Present Onsite: {c.presentOnsite}
+                      <Clock size={12} /> Onsite: {c.presentOnsite}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={12} /> Filed: {formatDate(c.createdAt)}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-secondary)' }}>
+                      <Clock size={12} /> Waiting: <WaitingTimer createdAt={c.createdAt} />
                     </span>
                   </div>
                 </div>
