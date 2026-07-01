@@ -38,6 +38,7 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
   const [siteId, setSiteId] = useState('');
   const [sfCase, setSfCase] = useState('');
   const [caller, setCaller] = useState('Installer');
+  const [customCaller, setCustomCaller] = useState('');
   const [presentOnsite, setPresentOnsite] = useState('Yes');
   const [wikiUrl, setWikiUrl] = useState('http://10.200.48.57/index.php/Microinverters/Troubleshooting/misconfigured-radio-settings');
   const [issue, setIssue] = useState('');
@@ -73,12 +74,13 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
 
     setIsSubmitting(true);
     setTimeout(() => {
+      const finalCaller = caller === 'Others' ? customCaller.trim() : caller;
       const newCase = {
         id: `case-${Date.now()}`,
         title: `Site ${siteId} // SF-${sfCase}`,
         siteId: siteId.trim(),
         sfCase: sfCase.trim(),
-        caller,
+        caller: finalCaller,
         presentOnsite,
         wikiUrl: wikiUrl.trim(),
         issue: issue.trim(),
@@ -87,7 +89,7 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
         // General matching fields for UI compatibility
         severity: 'high',
         category: 'Hardware Triage',
-        description: `Site ID: ${siteId}\nSF Case: ${sfCase}\nCaller: ${caller}\nOnsite: ${presentOnsite}\nIssue: ${issue}\nQuestion: ${question}`,
+        description: `Site ID: ${siteId}\nSF Case: ${sfCase}\nCaller: ${finalCaller}\nOnsite: ${presentOnsite}\nIssue: ${issue}\nQuestion: ${question}`,
         
         engineerName,
         smeName: null,
@@ -105,6 +107,7 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
       setSfCase('');
       setIssue('');
       setQuestion('');
+      setCustomCaller('');
     }, 600);
   };
 
@@ -178,7 +181,7 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>
-              File Technical Escalation
+              Case Profile
             </h2>
             <form onSubmit={handleSubmit} className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               
@@ -218,10 +221,22 @@ export default function EngineerDashboard({ engineerName, cases, messages = [], 
                     onChange={(e) => setCaller(e.target.value)}
                     style={{ background: 'rgba(10, 8, 20, 0.6)', cursor: 'pointer' }}
                   >
+                    <option value="Homeowner" style={{ background: '#111' }}>Homeowner</option>
                     <option value="Installer" style={{ background: '#111' }}>Installer</option>
-                    <option value="Host" style={{ background: '#111' }}>Host User</option>
-                    <option value="Technician" style={{ background: '#111' }}>Field Technician</option>
+                    <option value="System Host" style={{ background: '#111' }}>System Host</option>
+                    <option value="Others" style={{ background: '#111' }}>Others</option>
                   </select>
+                  {caller === 'Others' && (
+                    <input
+                      type="text"
+                      className="glass-input"
+                      style={{ marginTop: '8px' }}
+                      placeholder="Specify who the caller is..."
+                      value={customCaller}
+                      onChange={(e) => setCustomCaller(e.target.value)}
+                      required
+                    />
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

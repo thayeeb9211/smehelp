@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../utils/firebase';
-import { collection, doc, setDoc, addDoc, updateDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 const CHANNEL_NAME = 'smehelp_realtime_channel';
 
@@ -13,6 +13,7 @@ const isFirebaseConfigured = () => {
 export function useRealTime() {
   const [cases, setCases] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [teams, setTeams] = useState([]);
   const channelRef = useRef(null);
   const useFirebase = isFirebaseConfigured();
 
@@ -21,13 +22,25 @@ export function useRealTime() {
     if (!useFirebase) {
       const savedCases = localStorage.getItem('smehelp_cases');
       const savedMessages = localStorage.getItem('smehelp_messages');
+      const savedTeams = localStorage.getItem('smehelp_teams');
       if (savedCases) setCases(JSON.parse(savedCases));
       if (savedMessages) setMessages(JSON.parse(savedMessages));
+      if (savedTeams) {
+        setTeams(JSON.parse(savedTeams));
+      } else {
+        const defaultTeams = [
+          { id: 'team-alpha', name: 'Team Alpha', manager: 'Manager Mike', members: ['sconnor@enphase.com', 'Sarah Connor'] },
+          { id: 'team-beta', name: 'Team Beta', manager: 'Manager Mike', members: ['j.installer@gmail.com', 'Installer Joe'] },
+          { id: 'team-gamma', name: 'Team Gamma', manager: 'Manager Mike', members: ['mshariff@enphase.com', 'Mohammed Thayeeb Shariff'] }
+        ];
+        localStorage.setItem('smehelp_teams', JSON.stringify(defaultTeams));
+        setTeams(defaultTeams);
+      }
     }
   }, [useFirebase]);
 
   // Sync state helper for local fallback
-  const syncLocalState = (updatedCases, updatedMessages) => {
+  const syncLocalState = (updatedCases, updatedMessages, updatedTeams) => {
     if (updatedCases) {
       localStorage.setItem('smehelp_cases', JSON.stringify(updatedCases));
       setCases(updatedCases);
@@ -35,6 +48,10 @@ export function useRealTime() {
     if (updatedMessages) {
       localStorage.setItem('smehelp_messages', JSON.stringify(updatedMessages));
       setMessages(updatedMessages);
+    }
+    if (updatedTeams) {
+      localStorage.setItem('smehelp_teams', JSON.stringify(updatedTeams));
+      setTeams(updatedTeams);
     }
   };
 
@@ -64,9 +81,35 @@ export function useRealTime() {
         console.error("Firestore Messages Snapshot Error:", error);
       });
 
+      // 3. Listen to Teams
+      const teamsQuery = query(collection(db, 'teams'));
+      const unsubscribeTeams = onSnapshot(teamsQuery, (snapshot) => {
+        const teamsList = [];
+        snapshot.forEach((doc) => {
+          teamsList.push({ id: doc.id, ...doc.data() });
+        });
+        
+        if (teamsList.length === 0) {
+          // Initialize defaults in firestore
+          const defaultTeams = [
+            { id: 'team-alpha', name: 'Team Alpha', manager: 'Manager Mike', members: ['sconnor@enphase.com', 'Sarah Connor'] },
+            { id: 'team-beta', name: 'Team Beta', manager: 'Manager Mike', members: ['j.installer@gmail.com', 'Installer Joe'] },
+            { id: 'team-gamma', name: 'Team Gamma', manager: 'Manager Mike', members: ['mshariff@enphase.com', 'Mohammed Thayeeb Shariff'] }
+          ];
+          defaultTeams.forEach(t => {
+            setDoc(doc(db, 'teams', t.id), t);
+          });
+        } else {
+          setTeams(teamsList);
+        }
+      }, (error) => {
+        console.error("Firestore Teams Snapshot Error:", error);
+      });
+
       return () => {
         unsubscribeCases();
         unsubscribeMessages();
+        unsubscribeTeams();
       };
     } else {
       // Fallback: Create BroadcastChannel
@@ -79,12 +122,15 @@ export function useRealTime() {
           case 'SYNC_STATE':
             if (payload.cases) setCases(payload.cases);
             if (payload.messages) setMessages(payload.messages);
+            if (payload.teams) setTeams(payload.teams);
             break;
           default:
             const savedCases = localStorage.getItem('smehelp_cases');
             const savedMessages = localStorage.getItem('smehelp_messages');
+            const savedTeams = localStorage.getItem('smehelp_teams');
             if (savedCases) setCases(JSON.parse(savedCases));
             if (savedMessages) setMessages(JSON.parse(savedMessages));
+            if (savedTeams) setTeams(JSON.parse(savedTeams));
             break;
         }
       };
@@ -104,7 +150,6 @@ export function useRealTime() {
 
   // Actions
   const createCase = async (newCase) => {
-    // Add a system message for case creation
     const systemMsg = {
       caseId: newCase.id,
       senderName: 'System',
@@ -117,9 +162,7 @@ export function useRealTime() {
 
     if (useFirebase) {
       try {
-        // Save case to Firestore
         await setDoc(doc(db, 'cases', newCase.id), newCase);
-        // Save system message to Firestore
         await addDoc(collection(db, 'messages'), systemMsg);
       } catch (e) {
         console.error("Failed to create case in Firestore:", e);
@@ -129,7 +172,7 @@ export function useRealTime() {
       const systemMsgWithId = { ...systemMsg, id: `sys-${Date.now()}` };
       const updatedMsgs = [...messages, systemMsgWithId];
       
-      syncLocalState(updated, updatedMsgs);
+      syncLocalState(updated, updatedMsgs, null);
       broadcastLocal('CASE_CREATED', { cases: updated, messages: updatedMsgs });
     }
   };
@@ -139,7 +182,6 @@ export function useRealTime() {
     const createdAt = currentCase ? currentCase.createdAt : new Date().toISOString();
     const acceptedAt = new Date().toISOString();
     
-    // Calculate wait time
     const waitMs = new Date(acceptedAt) - new Date(createdAt);
     const waitSecs = Math.max(0, Math.floor(waitMs / 1000));
     const mins = Math.floor(waitSecs / 60);
@@ -186,7 +228,7 @@ export function useRealTime() {
       const systemMsgWithId = { ...systemMsg, id: `sys-${Date.now()}` };
       const updatedMsgs = [...messages, systemMsgWithId];
 
-      syncLocalState(updated, updatedMsgs);
+      syncLocalState(updated, updatedMsgs, null);
       broadcastLocal('CASE_ACCEPTED', { cases: updated, messages: updatedMsgs });
     }
   };
@@ -228,8 +270,22 @@ export function useRealTime() {
       const systemMsgWithId = { ...systemMsg, id: `sys-${Date.now()}` };
       const updatedMsgs = [...messages, systemMsgWithId];
 
-      syncLocalState(updated, updatedMsgs);
+      syncLocalState(updated, updatedMsgs, null);
       broadcastLocal('CASE_RESOLVED', { cases: updated, messages: updatedMsgs });
+    }
+  };
+
+  const deleteCase = async (caseId) => {
+    if (useFirebase) {
+      try {
+        await deleteDoc(doc(db, 'cases', caseId));
+      } catch (e) {
+        console.error("Failed to delete case in Firestore:", e);
+      }
+    } else {
+      const updated = cases.filter(c => c.id !== caseId);
+      syncLocalState(updated, null, null);
+      broadcastLocal('SYNC_STATE', { cases: updated });
     }
   };
 
@@ -253,34 +309,115 @@ export function useRealTime() {
     } else {
       const newMsgWithId = { ...newMsg, id: `msg-${Date.now()}` };
       const updated = [...messages, newMsgWithId];
-      syncLocalState(null, updated);
+      syncLocalState(null, updated, null);
       broadcastLocal('MESSAGE_SENT', { messages: updated });
+    }
+  };
+
+  const deleteMessage = async (messageId) => {
+    if (useFirebase) {
+      try {
+        await deleteDoc(doc(db, 'messages', messageId));
+      } catch (e) {
+        console.error("Failed to delete message from Firestore:", e);
+      }
+    } else {
+      const updated = messages.filter(m => m.id !== messageId);
+      syncLocalState(null, updated, null);
+      broadcastLocal('SYNC_STATE', { messages: updated });
+    }
+  };
+
+  // Dynamic Teams Hub Actions
+  const createTeam = async (name, manager) => {
+    const newTeam = {
+      id: `team-${Date.now()}`,
+      name,
+      manager,
+      members: []
+    };
+
+    if (useFirebase) {
+      try {
+        await setDoc(doc(db, 'teams', newTeam.id), newTeam);
+      } catch (e) {
+        console.error("Failed to create team in Firestore:", e);
+      }
+    } else {
+      const updated = [...teams, newTeam];
+      syncLocalState(null, null, updated);
+      broadcastLocal('SYNC_STATE', { teams: updated });
+    }
+  };
+
+  const addTeamMember = async (teamId, email) => {
+    const targetTeam = teams.find(t => t.id === teamId);
+    if (!targetTeam) return;
+
+    // Avoid duplicates
+    if (targetTeam.members.includes(email)) return;
+    const updatedMembers = [...targetTeam.members, email];
+
+    if (useFirebase) {
+      try {
+        await updateDoc(doc(db, 'teams', teamId), {
+          members: updatedMembers
+        });
+      } catch (e) {
+        console.error("Failed to add team member in Firestore:", e);
+      }
+    } else {
+      const updated = teams.map(t => t.id === teamId ? { ...t, members: updatedMembers } : t);
+      syncLocalState(null, null, updated);
+      broadcastLocal('SYNC_STATE', { teams: updated });
+    }
+  };
+
+  const assignTeamManager = async (teamId, manager) => {
+    if (useFirebase) {
+      try {
+        await updateDoc(doc(db, 'teams', teamId), {
+          manager
+        });
+      } catch (e) {
+        console.error("Failed to assign manager in Firestore:", e);
+      }
+    } else {
+      const updated = teams.map(t => t.id === teamId ? { ...t, manager } : t);
+      syncLocalState(null, null, updated);
+      broadcastLocal('SYNC_STATE', { teams: updated });
     }
   };
 
   const clearAllData = async () => {
     if (useFirebase) {
-      // In production Firebase, bulk delete is handled by backend or individual deletes.
-      // For this demo, we'll notify that database wipe is local or can clear state.
       console.warn("Wiping database in Firebase mode requires manual Firestore wipe.");
       setCases([]);
       setMessages([]);
     } else {
       localStorage.removeItem('smehelp_cases');
       localStorage.removeItem('smehelp_messages');
+      localStorage.removeItem('smehelp_teams');
       setCases([]);
       setMessages([]);
-      broadcastLocal('SYNC_STATE', { cases: [], messages: [] });
+      setTeams([]);
+      broadcastLocal('SYNC_STATE', { cases: [], messages: [], teams: [] });
     }
   };
 
   return {
     cases,
     messages,
+    teams,
     createCase,
     acceptCase,
     resolveCase,
+    deleteCase,
     sendMessage,
+    deleteMessage,
+    createTeam,
+    addTeamMember,
+    assignTeamManager,
     clearAllData
   };
 }

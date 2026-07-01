@@ -1,12 +1,52 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Send, CheckCircle, ChevronLeft, Download, Paperclip, ExternalLink, Maximize2, Minimize2, ZoomIn, ZoomOut, RefreshCw, X } from 'lucide-react';
+import { FileText, Send, CheckCircle, ChevronLeft, Download, Paperclip, ExternalLink, Maximize2, Minimize2, ZoomIn, ZoomOut, RefreshCw, X, Camera } from 'lucide-react';
 import { generateSessionPDF } from '../utils/pdfGenerator';
+import html2canvas from 'html2canvas';
 
-export default function ChatWorkspace({ user, activeCase, messages, onSendMessage, onResolveCase, onBack }) {
+// Helper to compress images client-side before sending to prevent Firestore and LocalStorage size errors
+const compressImage = (base64Str, maxWidth = 1000, maxHeight = 1000, quality = 0.7) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // Keep aspect ratio
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Convert to JPEG with quality parameter
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressedDataUrl);
+    };
+    img.onerror = () => {
+      resolve(base64Str); // Fallback to original if load fails
+    };
+  });
+};
+
+export default function ChatWorkspace({ user, activeCase, messages, onSendMessage, onResolveCase, onDeleteMessage, onBack }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]); // Array of { name, type, data }
   const [isEnlarged, setIsEnlarged] = useState(false);
   const chatEndRef = useRef(null);
+  const textareaRef = useRef(null);
 
   // Lightbox & Zoom/Pan State
   const [activeLightboxImg, setActiveLightboxImg] = useState(null);
@@ -23,29 +63,128 @@ export default function ChatWorkspace({ user, activeCase, messages, onSendMessag
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // Auto grow textarea height as user types
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      // If manually enlarged, use larger height, else fit scroll height between 40px and 200px
+      const minHeight = isEnlarged ? 120 : 40;
+      const newHeight = Math.max(minHeight, Math.min(textareaRef.current.scrollHeight, 200));
+      textareaRef.current.style.height = `${newHeight}px`;
+    }
+  }, [text, isEnlarged]);
+
   const handleFileUpload = (e) => {
     const uploadedFiles = Array.from(e.target.files);
     
-    // Check limit
-    if (files.length + uploadedFiles.length > 10) {
-      alert("You can upload a maximum of 10 documents.");
+    // Check limit (increased to 20)
+    if (files.length + uploadedFiles.length > 20) {
+      alert("You can upload a maximum of 20 documents.");
       return;
     }
 
     uploadedFiles.forEach(file => {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
+        let fileData = reader.result;
+        let fileName = file.name;
+        let fileType = file.type;
+
+        // Compress image files client side to reduce base64 size
+        if (fileType.startsWith('image/')) {
+          fileData = await compressImage(reader.result, 1000, 1000, 0.7);
+          // Convert extension to .jpg for uniformity
+          fileName = fileName.replace(/\.[^/.]+$/, "") + ".jpg";
+          fileType = "image/jpeg";
+        }
+
         setFiles(prev => [
           ...prev,
           {
-            name: file.name,
-            type: file.type,
-            data: reader.result
+            name: fileName,
+            type: fileType,
+            data: fileData
           }
         ]);
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  // Handle paste events to attach images from clipboard (screenshots)
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const filesToUpload = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          filesToUpload.push(blob);
+        }
+      }
+    }
+
+    if (filesToUpload.length === 0) return;
+    
+    // Check limit
+    if (files.length + filesToUpload.length > 20) {
+      alert("You can upload a maximum of 20 documents.");
+      return;
+    }
+
+    e.preventDefault();
+
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const compressedData = await compressImage(reader.result, 1000, 1000, 0.7);
+        setFiles(prev => [
+          ...prev,
+          {
+            name: `Clipboard_Screenshot_${Date.now()}_${i + 1}.jpg`,
+            type: 'image/jpeg',
+            data: compressedData
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Capture Screenshot of the current app workspace area
+  const handleCaptureScreenshot = async () => {
+    try {
+      const appContainer = document.querySelector('.app-container') || document.body;
+      
+      const canvas = await html2canvas(appContainer, {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#0a0814'
+      });
+      
+      const rawDataUrl = canvas.toDataURL('image/png');
+      const compressedData = await compressImage(rawDataUrl, 1200, 1200, 0.7);
+      
+      if (files.length >= 20) {
+        alert("You can upload a maximum of 20 documents.");
+        return;
+      }
+
+      setFiles(prev => [
+        ...prev,
+        {
+          name: `App_Screenshot_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+          data: compressedData
+        }
+      ]);
+    } catch (err) {
+      console.error("Screenshot capture failed:", err);
+      alert("Failed to capture screenshot. Please try pasting with Ctrl+V instead.");
+    }
   };
 
   const handleSend = (e) => {
@@ -418,9 +557,28 @@ export default function ChatWorkspace({ user, activeCase, messages, onSendMessag
                   )}
                 </div>
 
-                {/* Time Tag */}
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '4px', alignSelf: isMe ? 'flex-end' : 'flex-start' }}>
-                  {msg.timestamp}
+                {/* Time Tag & Unsend */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', alignSelf: isMe ? 'flex-end' : 'flex-start' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                    {msg.timestamp}
+                  </span>
+                  {isMe && (
+                    <button
+                      onClick={() => onDeleteMessage(msg.id)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--status-critical)',
+                        cursor: 'pointer',
+                        fontSize: '0.65rem',
+                        padding: '0',
+                        textDecoration: 'underline'
+                      }}
+                      title="Delete this message"
+                    >
+                      Unsend
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -492,14 +650,34 @@ export default function ChatWorkspace({ user, activeCase, messages, onSendMessag
               />
             </label>
 
+            <button
+              type="button"
+              onClick={handleCaptureScreenshot}
+              className="glass-panel glass-panel-hover"
+              style={{
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                background: 'transparent',
+                border: '1px solid var(--glass-border)',
+                color: 'var(--text-secondary)',
+                borderRadius: '10px'
+              }}
+              title="Capture Workspace Screenshot"
+            >
+              <Camera size={18} />
+            </button>
+
             {/* Teams-like expandable textarea typing screen */}
             <textarea
+              ref={textareaRef}
               className="glass-input"
-              rows={isEnlarged ? 4 : 1}
               style={{
                 flex: 1,
-                minHeight: isEnlarged ? '120px' : '40px',
-                height: isEnlarged ? '120px' : '40px',
+                minHeight: '40px',
                 maxHeight: '200px',
                 resize: 'vertical',
                 padding: '10px 12px',
@@ -509,9 +687,10 @@ export default function ChatWorkspace({ user, activeCase, messages, onSendMessag
                 background: 'rgba(10, 8, 20, 0.6)',
                 overflowY: 'auto'
               }}
-              placeholder={activeCase.status === 'resolved' ? "Case is resolved. You can still message..." : "Type system updates or chat..."}
+              placeholder={activeCase.status === 'resolved' ? "Case is resolved. You can still message..." : "Type system updates or chat... (Pasting screenshots supported)"}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
